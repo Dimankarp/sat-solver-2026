@@ -171,7 +171,7 @@ class Solver:
                         if self.values[lit] != -1:
                             temp = c[0]
                             c[0] = c[j]
-                            c[j] = c[0]
+                            c[j] = temp
                             self.watches[lit].append([other, c])
                             found = True
                             break
