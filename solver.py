@@ -27,6 +27,19 @@ class Solver:
 
         self.preprocess()
 
+        self.lit_counts = [0] * num_lits
+        for c in self.clauses:
+            for lit in c:
+                self.lit_counts[lit] += 1
+        for lit in self.units:
+            self.lit_counts[lit] += 1
+
+        self.lit_order = sorted(
+            range(2, num_lits),
+            key=lambda lit: self.lit_counts[lit],
+            reverse=True,
+        )
+
     def preprocess(self):
         """
         Разбор дизъюнктов формулы:
@@ -140,15 +153,11 @@ class Solver:
         return True
 
     def choose_literal(self):
-        """
-        ChooseLiteral: литерал для следующего решения или None, если все
-        переменные означены.
-        """
-        for v in range(1, self.num_vars + 1):
-            if self.sigkill.is_set():
-                return None
-            lit = 2 * v
-            if self.values[lit] == 0:
+        if self.sigkill.is_set():
+            return None
+        values = self.values
+        for lit in self.lit_order:
+            if values[lit] == 0:
                 return lit
         return None
 
