@@ -1,6 +1,6 @@
 import sys
 from threading import Event
-from utils import SATSolverResult, load_formula, lit_to_dimacs
+from utils import SATSolverResult, load_formula, lit_to_dimacs, neg
 
 
 class Solver:
@@ -26,7 +26,7 @@ class Solver:
         self.model = None
 
         self.preprocess()
-
+     
         self.lit_counts = [0] * num_lits
         for c in self.clauses:
             for lit in c:
@@ -39,6 +39,8 @@ class Solver:
             key=lambda lit: self.lit_counts[lit],
             reverse=True,
         )
+
+        self.build_watches()
 
     def preprocess(self):
         """
@@ -121,43 +123,83 @@ class Solver:
         UnitPropagate: распространить литералы trail[propagated:].
         Возвращает True, если найден конфликт (все литералы дизъюнкта ложны).
         """
-        while True:
-            assigned_unit = False
-            for c in self.clauses:
-                if self.sigkill.is_set():
-                    return False
-                done = False
-                unassigned = -1
-                two_or_more = False                  
-                for lit in c:
-                    if self.sigkill.is_set():
-                        return False
-                    if self.values[lit] == 1:
-                        done = True
-                        break
-                    elif self.values[lit] == 0:
-                        if unassigned != -1:
-                            two_or_more = True
-                            break
-                        unassigned = lit
-                if not done and unassigned == -1:
-                    return False
-                if done or two_or_more:
-                    continue
-                self.assign(unassigned)
-                assigned_unit = True
+        while self.propagated < len(self.trail):
+            if self.sigkill.is_set():
+                return False
 
-            if not assigned_unit:
-                break
+            p = self.trail[self.propagated]
+            self.propagated += 1
+            neg_p = neg(p)
+
+            for b in self.binary[neg_p]:
+                val = self.values[b]
+                if val == 1:
+                    continue
+                if val == -1:
+                    return False
+                self.assign(b)
+
+            ws = self.watches[neg_p]
+            new = []
+            conflict = False
+
+            for item in ws:
+                    if conflict:
+                        new.append(item)
+                        continue
+
+                    if self.values[item[0]] == 1:
+                        new.append(item)
+                        continue
+
+                    c = item[1]
+                    if c[1] == neg_p:
+                        temp = c[1]
+                        c[1] = c[0]
+                        c[0] = temp
+
+                    other = c[1]
+
+                    if self.values[other] == 1:
+                        item[0] = other
+                        new.append(item)
+                        continue
+
+                    found = False
+                    for j in range(2, len(c)):
+                        lit = c[j]
+                        if self.values[lit] != -1:
+                            temp = c[0]
+                            c[0] = c[j]
+                            c[j] = c[0]
+                            self.watches[lit].append([other, c])
+                            found = True
+                            break
+
+                    if found:
+                        continue
+
+                    new.append(item)
+                    val_other = self.values[other]
+                    if val_other == -1:
+                        conflict = True
+                    elif val_other == 0:
+                        self.assign(other)
+
+            self.watches[neg_p] = new
+            if conflict:
+                return False
 
         return True
 
     def choose_literal(self):
+        """
+        ChooseLiteral: литерал для следующего решения или None, если все
+        переменные означены. """
         if self.sigkill.is_set():
             return None
-        values = self.values
         for lit in self.lit_order:
-            if values[lit] == 0:
+            if self.values[lit] == 0:
                 return lit
         return None
 
