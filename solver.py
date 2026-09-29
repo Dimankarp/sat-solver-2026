@@ -108,19 +108,84 @@ class Solver:
         UnitPropagate: распространить литералы trail[propagated:].
         Возвращает True, если найден конфликт (все литералы дизъюнкта ложны).
         """
-        raise NotImplementedError()
+        while True:
+            assigned_unit = False
+            for c in self.clauses:
+                if self.sigkill.is_set():
+                    return False
+                done = False
+                unassigned = -1
+                two_or_more = False                  
+                for lit in c:
+                    if self.sigkill.is_set():
+                        return False
+                    if self.values[lit] == 1:
+                        done = True
+                        break
+                    elif self.values[lit] == 0:
+                        if unassigned != -1:
+                            two_or_more = True
+                            break
+                        unassigned = lit
+                if not done and unassigned == -1:
+                    return False
+                if done or two_or_more:
+                    continue
+                self.assign(unassigned)
+                assigned_unit = True
+
+            if not assigned_unit:
+                break
+
+        return True
 
     def choose_literal(self):
         """
         ChooseLiteral: литерал для следующего решения или None, если все
         переменные означены.
         """
-        raise NotImplementedError()
+        for v in range(1, self.num_vars + 1):
+            if self.sigkill.is_set():
+                return None
+            lit = 2 * v
+            if self.values[lit] == 0:
+                return lit
+        return None
 
     def solve(self) -> SATSolverResult:
-        if self.sigkill.is_set():  # TODO: your code should check this predicate frequently! If it is set, you should return
-            return SATSolverResult.UNKNOWN
-        raise NotImplementedError()
+        if self.has_empty_clause:
+            return SATSolverResult.UNSAT
+
+        for lit in self.units:
+            if self.values[lit] == -1:
+                return SATSolverResult.UNSAT
+            if self.values[lit] == 0:
+                self.assign(lit)
+
+        if not self.propagate():
+            return SATSolverResult.UNSAT
+
+        while True:
+            if self.sigkill.is_set():
+                return SATSolverResult.UNKNOWN
+
+            lit = self.choose_literal()
+            if lit is None:
+                if self.sigkill.is_set():
+                    return SATSolverResult.UNKNOWN
+                self.save_model()
+                return SATSolverResult.SAT
+
+            self.decide(lit)
+
+            while not self.propagate():
+                if self.sigkill.is_set():
+                    return SATSolverResult.UNKNOWN
+                if self.level() == 0:
+                    return SATSolverResult.UNSAT
+                failed_lit = self.decision(self.level())
+                self.backtrack(self.level() - 1)
+                self.assign(failed_lit ^ 1)
 
 
 if __name__ == "__main__":
